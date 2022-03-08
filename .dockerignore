@@ -1,0 +1,10 @@
+# Deny everything.
+**
+
+!/LICENSE
+!/src
+!/package.json
+!/package-lock.json
+!/tsconfig.json
+!/.eslintrc.js
+!/.prettierignore
