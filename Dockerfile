@@ -40,6 +40,9 @@ FROM node:16-bullseye-slim AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
+# As the migrations are part of this Docker image, MIGRATIONS_PATH should be
+# known by this image and should not be provided by the orchestration.
+ENV MIGRATIONS_PATH=/home/node/app/migrations
 
 RUN apt-get update \
   && apt-get upgrade -y \
@@ -56,6 +59,11 @@ COPY \
   --from=builder \
   /home/node/app/dist \
   ./dist
+COPY \
+  --chown=node:node \
+  --from=builder \
+  /home/node/app/migrations \
+  "${MIGRATIONS_PATH}"
 COPY \
   --chown=node:node \
   --from=node_modules \
