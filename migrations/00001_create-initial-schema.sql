@@ -359,6 +359,8 @@ CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
       sv.unique_trip_id
     FROM
       apc_occupancy.door_count AS dc
+      INNER JOIN apc_occupancy.counting_vendor AS cv
+        ON (cv.counting_vendor_id = dc.counting_vendor_id)
       -- Get all stops of the trip, even those passed by.
       RIGHT OUTER JOIN apc_gtfs.stop_visit AS sv
         ON (sv.unique_stop_visit_id = dc.unique_stop_visit_id)
@@ -370,8 +372,6 @@ CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
         ON (r.unique_route_id = t.unique_route_id)
       INNER JOIN apc_gtfs.feed_publisher AS fp
         ON (s.unique_feed_publisher_id = fp.unique_feed_publisher_id)
-      INNER JOIN apc_occupancy.counting_vendor AS cv
-        ON (cv.counting_vendor_id = dc.counting_vendor_id)
     GROUP BY
       fp.feed_publisher_id,
       r.route_id,
