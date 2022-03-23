@@ -27,7 +27,14 @@ AS $util_convert_operating_timestamp_to_timestamptz$
 $util_convert_operating_timestamp_to_timestamptz$;
 COMMENT ON FUNCTION
   util.convert_operating_timestamp_to_timestamptz IS
-  'Convert operating date and time to timestamptz. As operating time can be over 24 hours, e.g. 28:34:51, we cannot use the data type time. The conversion is based on expecting the DST change to be over by noon. All operating times in an operating date that contains a DST change are interpreted to happen after the DST change, e.g. the combination of the operating date 2021-10-31 and the operating time 02:00:00 in the time zone Europe/Helsinki corresponds with the moment 2021-10-31T00:00:00Z and not 2021-10-30T23:00:00Z like usually.';
+  'Convert operating date and time to timestamptz. As operating time can be '
+  'over 24 hours, e.g. 28:34:51, we cannot use the data type time. The '
+  'conversion is based on expecting the DST change to be over by noon. All '
+  'operating times in an operating date that contains a DST change are '
+  'interpreted to happen after the DST change, e.g. the combination of the '
+  'operating date 2021-10-31 and the operating time 02:00:00 in the timezone '
+  'Europe/Helsinki corresponds with the moment 2021-10-31T00:00:00Z and not '
+  '2021-10-30T23:00:00Z like usually.';
 
 
 
@@ -105,7 +112,9 @@ CREATE INDEX ON
   (unique_route_id);
 COMMENT ON TABLE
   apc_gtfs.trip IS
-  'Unique trips, i.e. matches with the concept of DatedVehicleJourney in Transmodel. References: https://gtfs.org/schedule/reference/#tripstxt and https://gtfs.org/realtime/reference/#message-tripdescriptor';
+  'Unique trips, i.e. matches with the concept of DatedVehicleJourney in '
+  'Transmodel. References: https://gtfs.org/schedule/reference/#tripstxt and '
+  'https://gtfs.org/realtime/reference/#message-tripdescriptor';
 
 -- FIXME: unique_stop_visit_id or just stop_visit_id? This one is not in GTFS.
 CREATE TABLE apc_gtfs.stop_visit (
@@ -118,7 +127,8 @@ CREATE TABLE apc_gtfs.stop_visit (
 );
 COMMENT ON TABLE
   apc_gtfs.stop_visit IS
-  'Each visit on or passing by a stop for each unique trip, i.e. similar to the concept of Departure in Transmodel.';
+  'Each visit on or passing by a stop for each unique trip, i.e. similar to '
+  'the concept of Departure in Transmodel.';
 
 -- FIXME: consider select and insert instead.
 -- The only reason to UPDATE on conflict is to ensure a return value.
@@ -402,7 +412,8 @@ CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
     trip_start_operating_time,
     trip_start_moment,
     (trip_start_moment AT TIME ZONE timezone_name) AS trip_start_moment_local,
-    trip_start_moment + ('PT' || stop_sequence - 1 || 'M')::interval AS fake_stop_visit_moment,
+    trip_start_moment + ('PT' || stop_sequence - 1 || 'M')::interval
+      AS fake_stop_visit_moment,
     weekday_number,
     stop_sequence,
     stop_id,
