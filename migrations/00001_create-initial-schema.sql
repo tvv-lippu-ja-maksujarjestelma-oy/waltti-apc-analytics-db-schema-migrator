@@ -258,7 +258,7 @@ CREATE TABLE apc_occupancy.door_count (
   count_quality text
     NOT NULL
     REFERENCES apc_occupancy.count_quality (count_quality),
-  door_number smallint NOT NULL,
+  door_name text NOT NULL,
   count_class text NOT NULL REFERENCES apc_occupancy.count_class (count_class),
   door_count_in smallint NOT NULL,
   door_count_out smallint NOT NULL,
@@ -266,11 +266,9 @@ CREATE TABLE apc_occupancy.door_count (
     UNIQUE (
       counting_vendor_id,
       unique_stop_visit_id,
-      door_number,
+      door_name,
       count_class
     ),
-  CONSTRAINT apc_occupancy_door_number_must_be_nonnegative
-    CHECK (door_number >= 0),
   CONSTRAINT apc_occupancy_door_counts_must_be_nonnegative
     CHECK (door_count_in >= 0 AND door_count_out >= 0)
 );
@@ -291,7 +289,7 @@ CREATE FUNCTION apc_occupancy.upsert_door_count(
   IN unique_stop_visit_id uuid,
   IN counting_vendor_name text,
   IN count_quality text,
-  IN door_number smallint,
+  IN door_name text,
   IN count_class text,
   IN count_door_in smallint,
   IN count_door_out smallint,
@@ -314,7 +312,7 @@ AS $apc_occupancy_upsert_door_counts$
     counting_vendor_id,
     unique_stop_visit_id,
     count_quality,
-    door_number,
+    door_name,
     count_class,
     door_count_in,
     door_count_out
@@ -334,7 +332,7 @@ AS $apc_occupancy_upsert_door_counts$
   ON CONFLICT (
     counting_vendor_id,
     unique_stop_visit_id,
-    door_number,
+    door_name,
     count_class
   ) DO UPDATE SET
     -- FIXME:
