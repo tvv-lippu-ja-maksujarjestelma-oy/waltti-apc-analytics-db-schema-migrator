@@ -18,7 +18,7 @@ AS $util_convert_operating_timestamp_to_timestamptz$
     SELECT
       concat(
         to_char(operating_date, 'YYYY-MM-DD'),
-        'T12:00:00',
+        'T12:00:00 ',
         timezone_name
       )::timestamptz AS noon
   )
@@ -45,7 +45,7 @@ COMMENT ON SCHEMA
 
 -- FIXME: Consider the concept of "feed" from GTFS as a column in stops, routes
 -- and trips. It could look like this:
--- table feed: (unique_feed_publisher_id, feed_publisher_name, feed_version)
+-- table feed: (unique_feed_publisher_id, feed_publisher_id, feed_version)
 
 CREATE TABLE apc_gtfs.feed_publisher (
   unique_feed_publisher_id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -123,7 +123,8 @@ CREATE TABLE apc_gtfs.stop_visit (
   unique_stop_id uuid NOT NULL REFERENCES apc_gtfs.stop (unique_stop_id),
   stop_sequence smallint NOT NULL,
   CONSTRAINT gtfs_unique_trip_id_with_stop_sequence_must_be_unique
-    UNIQUE (unique_trip_id, stop_sequence)
+    UNIQUE (unique_trip_id, stop_sequence),
+  CONSTRAINT gtfs_stop_sequence_must_be_nonnegative CHECK (stop_sequence >= 0)
 );
 COMMENT ON TABLE
   apc_gtfs.stop_visit IS
@@ -142,6 +143,8 @@ CREATE FUNCTION apc_gtfs.upsert_stop_visit(
   IN start_operating_time interval HOUR TO SECOND,
   IN direction_id smallint,
   IN stop_sequence smallint,
+  -- FIXME: remove OUT and test client code. anyway, maybe this should be in
+  -- the typescript client
   OUT unique_stop_visit_id uuid
 )
 RETURNS uuid
@@ -242,7 +245,7 @@ CREATE TABLE apc_occupancy.door_count (
     NOT NULL
     REFERENCES apc_gtfs.stop_visit (unique_stop_visit_id),
   door_number smallint NOT NULL,
-  count_class text NOT NULL REFERENCES apc_occupancy.count_class,
+  count_class text NOT NULL REFERENCES apc_occupancy.count_class (count_class),
   door_count_in smallint NOT NULL,
   door_count_out smallint NOT NULL,
   CONSTRAINT apc_occupancy_door_count_uniqueness
@@ -328,13 +331,35 @@ AS $apc_occupancy_upsert_door_counts$
     --    exists, all in one query.
     --
     -- Also consider how to batch several messages into rows, e.g. every second.
+    count_quality = EXCLUDED.count_quality,
     door_count_in = EXCLUDED.door_count_in,
     door_count_out = EXCLUDED.door_count_out
   RETURNING door_count_id;
 $apc_occupancy_upsert_door_counts$;
 
 CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
-  WITH phase1 AS (
+  WITH distinct_counting_vendors_and_count_classes_per_trip AS (
+    SELECT DISTINCT
+      sv.unique_trip_id,
+      dc.count_class,
+      dc.counting_vendor_id,
+      cv.name AS counting_vendor_name
+    FROM
+      apc_occupancy.door_count AS dc
+      INNER JOIN apc_occupancy.counting_vendor AS cv
+        ON (cv.counting_vendor_id = dc.counting_vendor_id)
+      INNER JOIN apc_gtfs.stop_visit AS sv
+        ON (sv.unique_stop_visit_id = dc.unique_stop_visit_id)
+  ), count_possibilities_per_stop_visit AS (
+    SELECT
+      combinations.counting_vendor_id,
+      combinations.counting_vendor_name,
+      combinations.count_class,
+      sv.*
+    FROM distinct_counting_vendors_and_count_classes_per_trip AS combinations
+      INNER JOIN apc_gtfs.stop_visit AS sv
+        ON (sv.unique_trip_id = combinations.unique_trip_id)
+  ), doors_summed AS (
     SELECT
       fp.feed_publisher_id,
       r.route_id,
@@ -347,27 +372,31 @@ CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
         s.timezone_name
       ) AS trip_start_moment,
       EXTRACT(isodow FROM t.start_operating_date) AS weekday_number,
-      sv.stop_sequence,
+      possibilities.stop_sequence,
       s.stop_id,
-      cv.name AS counting_vendor_name,
-      dc.count_class,
-      SUM(COALESCE(dc.door_count_in, 0)) AS count_in,
-      SUM(COALESCE(dc.door_count_out, 0)) AS count_out,
+      possibilities.counting_vendor_name,
+      possibilities.count_class,
+      sum(COALESCE(dc.door_count_in, 0)) AS count_in,
+      sum(COALESCE(dc.door_count_out, 0)) AS count_out,
       -- Helpers not to be shown in the final view.
       s.timezone_name,
-      dc.counting_vendor_id,
-      sv.unique_trip_id
+      possibilities.counting_vendor_id,
+      possibilities.unique_trip_id
     FROM
       apc_occupancy.door_count AS dc
-      INNER JOIN apc_occupancy.counting_vendor AS cv
-        ON (cv.counting_vendor_id = dc.counting_vendor_id)
-      -- Get all stops of the trip, even those passed by.
-      RIGHT OUTER JOIN apc_gtfs.stop_visit AS sv
-        ON (sv.unique_stop_visit_id = dc.unique_stop_visit_id)
+      -- Get all stops, count classes and counting vendors of the trip, even
+      -- stops passed by or count classes that had no events for a particular
+      -- stop.
+      RIGHT OUTER JOIN count_possibilities_per_stop_visit AS possibilities
+        ON (
+          possibilities.unique_stop_visit_id = dc.unique_stop_visit_id
+          AND possibilities.count_class = dc.count_class
+          AND possibilities.counting_vendor_id = dc.counting_vendor_id
+        )
       INNER JOIN apc_gtfs.trip AS t
-        ON (t.unique_trip_id = sv.unique_trip_id)
+        ON (t.unique_trip_id = possibilities.unique_trip_id)
       INNER JOIN apc_gtfs.stop AS s
-        ON (s.unique_stop_id = sv.unique_stop_id)
+        ON (s.unique_stop_id = possibilities.unique_stop_id)
       INNER JOIN apc_gtfs.route AS r
         ON (r.unique_route_id = t.unique_route_id)
       INNER JOIN apc_gtfs.feed_publisher AS fp
@@ -379,30 +408,26 @@ CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
       t.start_operating_date,
       t.start_operating_time,
       s.timezone_name,
-      sv.stop_sequence,
+      possibilities.stop_sequence,
       s.stop_id,
-      counting_vendor_name,
-      dc.count_class,
-      dc.counting_vendor_id,
-      sv.unique_trip_id
-  ), phase2 AS (
+      possibilities.counting_vendor_name,
+      possibilities.count_class,
+      possibilities.counting_vendor_id,
+      possibilities.unique_trip_id
+  ), cumulative_counts AS (
     SELECT
       *,
-      SUM(COALESCE(count_in, 0)) OVER (
-        PARTITION BY
-          counting_vendor_id,
-          unique_trip_id,
-          count_class
-        ORDER BY stop_sequence
-      ) AS count_in_cumulative,
-      SUM(COALESCE(count_out, 0)) OVER (
-        PARTITION BY
-          counting_vendor_id,
-          unique_trip_id,
-          count_class
-        ORDER BY stop_sequence
-      ) AS count_out_cumulative
-    FROM phase1
+      -- COALESCE was used in doors_summed so there are no NULLs to worry about.
+      sum(count_in) OVER w AS cumulative_count_in,
+      sum(count_out) OVER w AS cumulative_count_out
+    FROM doors_summed
+    WINDOW w AS (
+      PARTITION BY
+        counting_vendor_id,
+        unique_trip_id,
+        count_class
+      ORDER BY stop_sequence
+    )
   )
   SELECT
     feed_publisher_id,
@@ -421,10 +446,10 @@ CREATE VIEW apc_occupancy.all_doors_count_by_stop_visit AS (
     count_class,
     count_in,
     count_out,
-    count_in_cumulative,
-    count_out_cumulative,
-    COALESCE(count_in_cumulative, 0) - COALESCE(count_out_cumulative, 0)
-      AS current_occupancy
+    cumulative_count_in,
+    cumulative_count_out,
+    -- COALESCE was used in doors_summed so there are no NULLs to worry about.
+    cumulative_count_in - cumulative_count_out AS occupancy_after_stop
   FROM
-    phase2
+    cumulative_counts
 );
