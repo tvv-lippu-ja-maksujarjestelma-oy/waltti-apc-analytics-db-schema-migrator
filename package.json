@@ -4,7 +4,7 @@
   "description": "Create and maintain the Waltti APC analytics database schema",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "check-and-build": "npm run ts:check && npm run prettier:check && npm run eslint && npm run test && npm run build",
     "eslint": "eslint . --ext .ts --max-warnings=0",
     "prettier": "prettier --write .",
