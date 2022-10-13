@@ -231,6 +231,17 @@ INSERT INTO apc_occupancy.count_class
   ('wheelchair'),
   ('other');
 
+CREATE TABLE apc_occupancy.count_quality (
+  count_quality text PRIMARY KEY
+);
+
+INSERT INTO apc_occupancy.count_quality
+  (count_quality)
+  VALUES
+  ('regular'),
+  ('defect'),
+  ('other');
+
 CREATE TABLE apc_occupancy.counting_vendor (
   counting_vendor_id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   name text NOT NULL UNIQUE
@@ -244,6 +255,9 @@ CREATE TABLE apc_occupancy.door_count (
   unique_stop_visit_id uuid
     NOT NULL
     REFERENCES apc_gtfs.stop_visit (unique_stop_visit_id),
+  count_quality text
+    NOT NULL
+    REFERENCES apc_occupancy.count_quality (count_quality),
   door_number smallint NOT NULL,
   count_class text NOT NULL REFERENCES apc_occupancy.count_class (count_class),
   door_count_in smallint NOT NULL,
@@ -268,11 +282,15 @@ CREATE INDEX ON
   (unique_stop_visit_id);
 CREATE INDEX ON
   apc_occupancy.door_count
+  (count_quality);
+CREATE INDEX ON
+  apc_occupancy.door_count
   (count_class);
 
 CREATE FUNCTION apc_occupancy.upsert_door_count(
   IN unique_stop_visit_id uuid,
   IN counting_vendor_name text,
+  IN count_quality text,
   IN door_number smallint,
   IN count_class text,
   IN count_door_in smallint,
@@ -295,6 +313,7 @@ AS $apc_occupancy_upsert_door_counts$
   INSERT INTO apc_occupancy.door_count (
     counting_vendor_id,
     unique_stop_visit_id,
+    count_quality,
     door_number,
     count_class,
     door_count_in,
@@ -306,7 +325,8 @@ AS $apc_occupancy_upsert_door_counts$
     $3,
     $4,
     $5,
-    $6
+    $6,
+    $7
     FROM counting_vendor AS cv
       CROSS JOIN apc_gtfs.stop_visit AS sv
     WHERE sv.unique_stop_visit_id = $1
