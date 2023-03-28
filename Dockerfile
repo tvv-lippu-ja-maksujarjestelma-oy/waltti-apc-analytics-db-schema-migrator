@@ -1,4 +1,10 @@
-FROM node:16-bullseye-slim AS base
+FROM node:18-bullseye-slim AS base
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get upgrade --assume-yes \
+  && rm -rf /var/lib/apt/lists/*
 
 USER node
 RUN mkdir /home/node/app
@@ -19,7 +25,7 @@ CMD ["npm", "run", "check-and-build"]
 
 
 
-# An alternative to using a separate layer is to trust npm prune --production.
+# An alternative to creating this layer is to trust npm prune --production.
 FROM base AS node_modules
 ENV NODE_ENV=production
 RUN npm ci --production
@@ -36,7 +42,7 @@ RUN npm run build
 
 # The base image should be the same as the base image of base. Yet using ARG for
 # the base image irritates hadolint and might break Dependabot.
-FROM node:16-bullseye-slim AS production
+FROM node:18-bullseye-slim AS production
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
